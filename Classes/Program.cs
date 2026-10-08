@@ -18,7 +18,7 @@ namespace SABActivator
             Application.SetCompatibleTextRenderingDefault(false);
 
             /*
-                 Elevate to admin so we can modify the windows host file.
+                 Elevate to admin so we can modify the StartAllBack DLL in Program Files.
             */
 
             WindowsPrincipal principal = new WindowsPrincipal(WindowsIdentity.GetCurrent( ));

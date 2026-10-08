@@ -88,17 +88,15 @@ namespace SABActivator
             */
 
             String path         = Environment.GetEnvironmentVariable( "path" );
-            String[] folders    = path.Split( ';' );
 
-            foreach ( String folder in folders )
+            if ( !String.IsNullOrEmpty( path ) )
             {
-                if ( File.Exists( folder + dll_target ) )
+                foreach ( String folder in path.Split( ';' ) )
                 {
-                    return folder;
-                }
-                else if ( File.Exists( folder + "\\" + dll_target ) )
-                {
-                    return folder + "\\";
+                    if ( File.Exists( Path.Combine( folder, dll_target ) ) )
+                    {
+                        return folder;
+                    }
                 }
             }
 

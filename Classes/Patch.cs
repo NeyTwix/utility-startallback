@@ -20,7 +20,6 @@ namespace SABActivator
     class Patch
     {
 
-        private static string path_base         = AppDomain.CurrentDomain.BaseDirectory;
         private static string path_exe          = System.IO.Path.GetDirectoryName( System.Reflection.Assembly.GetEntryAssembly( ).Location );
         private static string dll_target        = Cfg.Default.app_target_dll;
 
@@ -175,12 +174,24 @@ namespace SABActivator
                 AutoRestartShell = 0
             */
 
-            RegistryKey ourKey  = Registry.LocalMachine;
-            ourKey              = ourKey.OpenSubKey(
+            RegistryKey ourKey  = Registry.LocalMachine.OpenSubKey(
                                     @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon",
                                     true
                                 );
-            ourKey.SetValue     ( "AutoRestartShell", 0 );
+            ourKey?.SetValue    ( "AutoRestartShell", 0 );
+
+            bool patched_any    = false;
+            bool shell_restored = false;
+
+            /*
+                Everything below runs inside try/finally so the shell is ALWAYS
+                restored (explorer relaunched + AutoRestartShell re-enabled), even
+                on early return or exception. Without this, a failed patch leaves
+                the machine with no desktop and shell auto-restart disabled.
+            */
+
+            try
+            {
 
             /*
                  kill task explorer.exe
@@ -236,8 +247,8 @@ namespace SABActivator
             foreach ( string path_dll in paths_arr )
             {
                 string path_backup      = path_dll + ".bak";
-                string query_takeown    = "takeown /f \'" + path_backup + "'";
-                string query_icalcs     = "icacls \'\" + path_backup +\"' /grant *S-1-5-32-544:F /c /l";
+                string query_takeown    = "takeown /f \'" + path_dll + "'";
+                string query_icalcs     = "icacls '" + path_dll + "' /grant *S-1-5-32-544:F /c /l";
 
                 /*
                     backup file exists
@@ -283,6 +294,7 @@ namespace SABActivator
                         );
                     #endif
 
+                    File.SetAttributes  ( path_dll, FileAttributes.Normal );
                     File.Delete         ( path_dll );
                     File.Move           ( path_backup, path_dll );
                 }
@@ -310,6 +322,15 @@ namespace SABActivator
                                             @"48 89 5C 24 08 55 56 57 48 8D AC 24 70 FF FF FF",
                                             @"67 C7 01 01 00 00 00 B8 01 00 00 00 C3 90 90 90"
                                         );
+
+                /*
+                    signature not present (wrong / updated StartAllBack version):
+                    skip instead of rewriting identical bytes and falsely
+                    reporting success.
+                */
+
+                if ( hex_result == hex_replace )
+                    continue;
 
                 #if DEBUG
                     try
@@ -341,6 +362,7 @@ namespace SABActivator
                 }
 
                 File.WriteAllBytes( path_dll, bytes_modified );
+                patched_any = true;
 
                 /*
                     launch StartAllBack
@@ -360,18 +382,19 @@ namespace SABActivator
             }
 
             /*
-                start task explorer.exe
+                no DLL contained the signature: report instead of claiming success
             */
 
-            Process.Start( "explorer" );
+            if ( !patched_any )
+                return Lng.statusbar_sab_not_found;
 
             /*
-                re-enable AutoRestartShell in registry
-                AutoRestartShell = 1
+                bring the desktop back BEFORE showing the completion dialog,
+                so the shell is already restored while the message box is up
             */
 
-            ourKey.SetValue( "AutoRestartShell", 1 );
-            ourKey.Close( );
+            RestoreShell( ourKey );
+            shell_restored = true;
 
             MessageBox.Show(
                 string.Format( Lng.msgbox_patch_compl_msg ),
@@ -381,6 +404,34 @@ namespace SABActivator
             );
 
             return Lng.statusbar_patch_complete;
+
+            }
+            finally
+            {
+                /*
+                    safety net: on early return / exception the shell was not
+                    restored above, so do it here. Always close the key.
+                */
+
+                if ( !shell_restored )
+                    RestoreShell( ourKey );
+
+                if ( ourKey != null )
+                    ourKey.Close( );
+            }
+        }
+
+        /*
+            Restart the Windows shell (explorer) and re-enable Winlogon's
+            automatic shell restart.
+        */
+
+        private static void RestoreShell( RegistryKey winlogonKey )
+        {
+            if ( winlogonKey != null )
+                winlogonKey.SetValue( "AutoRestartShell", 1 );
+
+            try { Process.Start( "explorer.exe" ); } catch { }
         }
     }
 }

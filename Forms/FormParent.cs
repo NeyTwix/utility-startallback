@@ -382,7 +382,7 @@ namespace SABActivator
                 Process.Start( "explorer.exe", src_file_path );
 
             /*
-                cannot locate mobaxterm program. Open dialog in Program Files(86)
+                cannot locate StartAllBack. Open dialog in Program Files
             */
 
             else
@@ -414,25 +414,10 @@ namespace SABActivator
             OpenFileDialog dlg      = new OpenFileDialog( );
             dlg.Title               = "Open DLL file";
             dlg.InitialDirectory    = ext_default;
-            dlg.Filter              = "SAB Library DLL|StartAllBackX64.dll|All files (*.*)|*.*";
+            dlg.Filter              = "SAB Library DLL|StartAllBack*.dll|All files (*.*)|*.*";
 
             if ( dlg.ShowDialog( ) == DialogResult.OK )
             {
-                StreamReader sr     = File.OpenText(dlg.FileName);
-
-                string s            = sr.ReadLine();
-                StringBuilder sb    = new StringBuilder();
-
-                while ( s != null )
-                {
-                    sb.Append( s );
-                    s = sr.ReadLine( );
-                }
-                sr.Close( );
-
-                toolStripStatusLabel1.Text = string.Format( "Loaded DLL from " + dlg.FileName );
-                statusStrip.Refresh( );
-
                 foreach ( String file in dlg.FileNames )
                 {
                     query_result = Serial.Start( file );
@@ -440,7 +425,6 @@ namespace SABActivator
                     toolStripStatusLabel1.Text = string.Format( query_result );
                     statusStrip.Refresh( );
                 }
-
             }
         }
 
