@@ -90,6 +90,30 @@ If you wish to simply use the keygen, head over to the [Releases](https://github
 
 <br />
 
+# Persistence & Unlocking
+
+The patch edits `StartAllBackX64.dll`. To stop StartAllBack's auto-updater from overwriting the patch (which otherwise reverts the activation on the next update/restart), the tool **locks** the patched DLL after applying it: it is set read-only and denied write/delete for everyone. Read and execute stay allowed, so StartAllBack still loads normally. No startup entry is created.
+
+<br />
+
+While the DLL is locked, **StartAllBack cannot update itself**. To allow an update again, or to remove the patch, unlock the DLL first from an **administrator** terminal:
+
+```bat
+takeown /f "C:\Program Files\StartAllBack\StartAllBackX64.dll"
+icacls "C:\Program Files\StartAllBack\StartAllBackX64.dll" /remove:d *S-1-1-0
+attrib -R "C:\Program Files\StartAllBack\StartAllBackX64.dll"
+```
+
+<br />
+
+Adjust the path if your install lives elsewhere, e.g. `%LOCALAPPDATA%\StartAllBack\` or `C:\Program Files (x86)\StartAllBack\`. After updating StartAllBack, run the patcher again to re-apply the patch and re-lock the DLL.
+
+<br />
+
+---
+
+<br />
+
 # Build
 
 Download the source files and launch the `.csproj` project file in Visual Studio.
