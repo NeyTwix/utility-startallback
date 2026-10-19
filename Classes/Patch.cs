@@ -247,74 +247,11 @@ namespace SABActivator
             foreach ( string path_dll in paths_arr )
             {
                 string path_backup      = path_dll + ".bak";
-                string query_takeown    = "takeown /f \'" + path_dll + "'";
-                string query_icalcs     = "icacls '" + path_dll + "' /grant *S-1-5-32-544:F /c /l";
 
                 /*
-                    backup file exists
+                    read the current bytes and attempt the signature
+                    replacement BEFORE touching anything on disk
                 */
-
-                if ( File.Exists( path_backup ) )
-                {
-
-                    /*
-                        run powershell commands to adjust permissions
-                    */
-
-                    using ( PowerShell ps = PowerShell.Create( ) )
-                    {
-
-                        ps.AddScript( query_takeown );
-                        ps.AddScript( query_icalcs );
-
-                        Collection<PSObject> PSOutput   = ps.Invoke( );
-                        StringBuilder sb                = new StringBuilder( );
-
-                        foreach ( PSObject PSItem in PSOutput )
-                        {
-                            if ( PSItem != null )
-                            {
-                                Console.WriteLine( $"Output line: [{PSItem}]" );
-                                sb.AppendLine( PSItem.ToString( ) );
-                            }
-                        }
-
-                        if ( ps.Streams.Error.Count > 0 )
-                        {
-                            // Error collection
-                        }
-                    }
-
-                    #if DEBUG
-                        MessageBox.Show(
-                            ".bak backup file already exists, deleting it and creating new\n\n" + path_backup,
-                            "Debug: Found existing",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.None
-                        );
-                    #endif
-
-                    File.SetAttributes  ( path_dll, FileAttributes.Normal );
-                    File.Delete         ( path_dll );
-                    File.Move           ( path_backup, path_dll );
-                }
-
-                /*
-                    Patch
-                */
-
-                File.SetAttributes      ( path_dll, FileAttributes.Normal );
-                File.Copy               ( path_dll, path_backup );
-                File.SetAttributes      ( path_backup, FileAttributes.Normal );
-
-                #if DEBUG
-                    MessageBox.Show(
-                        "The following file will be backed up: \n\n" + path_dll + "\n" + path_backup,
-                        "Debug: Create Backup of DLL",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.None
-                    );
-                #endif
 
                 byte[] bytes            = File.ReadAllBytes( path_dll );
                 string hex_replace      = BitConverter.ToString( bytes ).Replace( "-", " " );
@@ -324,9 +261,11 @@ namespace SABActivator
                                         );
 
                 /*
-                    signature not present (wrong / updated StartAllBack version):
-                    skip instead of rewriting identical bytes and falsely
-                    reporting success.
+                    signature absent -> the DLL is already patched, or is a
+                    version this tool doesn't know. Skip it. We deliberately do
+                    NOT restore an old ".bak" over it: that silently downgraded
+                    an updated StartAllBack (e.g. v3.9.28 back to a backed-up
+                    v3.9.23) and lost the activation.
                 */
 
                 if ( hex_result == hex_replace )
@@ -353,7 +292,7 @@ namespace SABActivator
                     }
                 #endif
 
-                string[] hex_patch      = hex_result.Split(' ');
+                string[] hex_patch      = hex_result.Split( ' ' );
                 byte[] bytes_modified   = new byte[ hex_patch.Length ];
 
                 for ( int i = 0 ; i < hex_patch.Length ; i++ )
@@ -361,8 +300,47 @@ namespace SABActivator
                     bytes_modified [ i ] = Convert.ToByte( hex_patch [ i ], 16 );
                 }
 
-                File.WriteAllBytes( path_dll, bytes_modified );
+                /*
+                    back up THIS exact version (replacing any stale backup),
+                    then write the patch. The ".bak" always matches the DLL we
+                    just patched, so re-running can never downgrade it.
+                */
+
+                if ( File.Exists( path_backup ) )
+                    File.SetAttributes( path_backup, FileAttributes.Normal );
+
+                File.SetAttributes      ( path_dll, FileAttributes.Normal );
+                File.Copy               ( path_dll, path_backup, true );
+                File.SetAttributes      ( path_backup, FileAttributes.Normal );
+
+                File.WriteAllBytes      ( path_dll, bytes_modified );
                 patched_any = true;
+
+                /*
+                    lock the patched DLL so StartAllBack's auto-updater cannot
+                    replace it -> activation persists, with NO startup entry.
+                    Read/execute stay allowed (the DLL still loads); only write,
+                    delete and attribute changes are denied. To let StartAllBack
+                    update again, unlock first:
+                        takeown /f "<dll>"
+                        icacls "<dll>" /remove:d *S-1-1-0
+                        attrib -R "<dll>"
+                */
+
+                try
+                {
+                    File.SetAttributes( path_dll, FileAttributes.ReadOnly );
+
+                    using ( PowerShell ps = PowerShell.Create( ) )
+                    {
+                        ps.AddScript( "icacls '" + path_dll + "' /deny *S-1-1-0:(DE,WD,AD,WA,WEA)" );
+                        ps.Invoke( );
+                    }
+                }
+                catch ( Exception )
+                {
+                    // locking is best-effort; the patch itself already applied
+                }
 
                 /*
                     launch StartAllBack
